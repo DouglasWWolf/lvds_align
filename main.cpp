@@ -57,7 +57,8 @@ int main(int argc, const char** argv)
 //=================================================================================================
 void show_help()
 {
-    printf("lvds_align [-table] [-strip]\n")    ;
+    printf("lvds_align [-table] [-strip]\n");
+    exit(1);
 }
 //=================================================================================================
 
@@ -219,6 +220,7 @@ void execute()
     window_t best[64];
     const char* filename = "fpga_reg.h";
     int lane;
+    int exit_code = 0;
 
     // Read our definitions file
     if (!read_register_definitions(reg, filename))
@@ -266,12 +268,14 @@ void execute()
          if (best[lane].length == 0)
          {
             fprintf(stderr,"Lane %d could not be calibrated!\n", lane);
+            exit_code = 1;
             continue;
          }
 
          if (best[lane].length < 10)
          {
-            fprintf(stderr,"Lane %d has very short window %d !\n", lane, best[lane].length);            
+            fprintf(stderr,"Lane %d has very short window %d !\n", lane, best[lane].length);
+            exit_code = 1;
          }
     }
 
@@ -302,5 +306,8 @@ void execute()
     // Clear alignment errors
     usleep(100);
     fpga.write(reg.LVDS_CLR_ALIGN_ERR, 1);
+
+    // Tell the operating system whether or not we succeeded
+    exit(exit_code);
 }
 //=================================================================================================
