@@ -99,9 +99,9 @@ void show_chart_line(uint32_t cal_word, uint64_t errors)
 {
     if ((cal_word & 0x1FF) == 0)
     {
-        printf("============\n");
+        printf("===========\n");
         printf("Bitslip : %d\n", cal_word >> 9);
-        printf("============\n");
+        printf("===========\n");
     }
 
     // Display the calibration word
