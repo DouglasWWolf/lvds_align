@@ -9,16 +9,16 @@
 
 static void eval(registers_t& reg, const char* name, uint64_t descriptor)
 {
-    if (strcmp(name, "LVDS_CAL_MODE"     ) == 0) {reg.LVDS_CAL_MODE      = descriptor; return;}
-    if (strcmp(name, "LVDS_CAL_WEN"      ) == 0) {reg.LVDS_CAL_WEN       = descriptor; return;}
-    if (strcmp(name, "LVDS_CAL_WORD"     ) == 0) {reg.LVDS_CAL_WORD      = descriptor; return;}
-    if (strcmp(name, "LVDS_LANE_SELECT"  ) == 0) {reg.LVDS_LANE_SELECT   = descriptor; return;}
-    if (strcmp(name, "LVDS_DATA"         ) == 0) {reg.LVDS_DATA          = descriptor; return;}
-    if (strcmp(name, "LVDS_RESET_HSSIO"  ) == 0) {reg.LVDS_RESET_HSSIO   = descriptor; return;}
-    if (strcmp(name, "LVDS_ALIGN_ERR"    ) == 0) {reg.LVDS_ALIGN_ERR     = descriptor; return;}
-    if (strcmp(name, "LVDS_CLR_ALIGN_ERR") == 0) {reg.LVDS_CLR_ALIGN_ERR = descriptor; return;}
-    if (strcmp(name, "REG_CHIPIO_ADDR"   ) == 0) {reg.REG_CHIPIO_ADDR    = descriptor; return;}
-    if (strcmp(name, "REG_CHIPIO_DATA"   ) == 0) {reg.REG_CHIPIO_DATA    = descriptor; return;}
+    if (strcmp(name, "LVDS_CAL_MODE"    ) == 0) {reg.LVDS_CAL_MODE     = descriptor; return;}
+    if (strcmp(name, "LVDS_CAL_WEN"     ) == 0) {reg.LVDS_CAL_WEN      = descriptor; return;}
+    if (strcmp(name, "LVDS_CAL_WORD"    ) == 0) {reg.LVDS_CAL_WORD     = descriptor; return;}
+    if (strcmp(name, "LVDS_LANE_SELECT" ) == 0) {reg.LVDS_LANE_SELECT  = descriptor; return;}
+    if (strcmp(name, "LVDS_RESET_HSSIO" ) == 0) {reg.LVDS_RESET_HSSIO  = descriptor; return;}
+    if (strcmp(name, "LVDS_ALIGN_ERR"   ) == 0) {reg.LVDS_ALIGN_ERR    = descriptor; return;}
+    if (strcmp(name, "LVDS_PRBS_ERR"    ) == 0) {reg.LVDS_PRBS_ERR     = descriptor; return;}
+    if (strcmp(name, "LVDS_CLEAR_ERRORS") == 0) {reg.LVDS_CLEAR_ERRORS = descriptor; return;}
+    if (strcmp(name, "REG_CHIPIO_ADDR"  ) == 0) {reg.REG_CHIPIO_ADDR   = descriptor; return;}
+    if (strcmp(name, "REG_CHIPIO_DATA"  ) == 0) {reg.REG_CHIPIO_DATA   = descriptor; return;}
 };
 
 //=============================================================================

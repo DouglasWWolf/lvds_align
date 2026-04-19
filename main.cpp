@@ -248,7 +248,7 @@ void execute()
         usleep(2);
 
         // Clear alignment errors
-        fpga.write(reg.LVDS_CLR_ALIGN_ERR, 1);
+        fpga.write(reg.LVDS_CLEAR_ERRORS, 1);
 
         // Wait just a moment for alignment errors to occur
         usleep(250);
@@ -305,7 +305,7 @@ void execute()
 
     // Clear alignment errors
     usleep(100);
-    fpga.write(reg.LVDS_CLR_ALIGN_ERR, 1);
+    fpga.write(reg.LVDS_CLEAR_ERRORS, 1);
 
     // Tell the operating system whether or not we succeeded
     exit(exit_code);
