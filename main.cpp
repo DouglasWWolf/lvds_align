@@ -17,7 +17,8 @@ PciDevice PCI;
 // Command line options
 struct opt_t
 {
-    bool    chart  = true;
+    bool    table  = false;
+    bool    strip  = false;
 } opt;
 
 
@@ -62,12 +63,17 @@ void parse_command_line(const char** argv)
     {
         token = argv[i++];
 
-        if (token == "-chart")
+        if (token == "-strip")
         {
-            opt.chart = true;
+            opt.strip = true;
             continue;
         }
 
+        if (token == "-table")
+        {
+            opt.table = true;
+            continue;
+        }
     }
 
     // If we made it to the end of the command-line options, all is well
@@ -113,8 +119,11 @@ void show_chart_line(uint32_t cal_word, uint64_t errors)
     printf("0x%03X : ", cal_word);
 
     // Loop through each line
-    for (int lane=0; lane<64; ++lane)
+    for (int i=0; i<64; ++i)
     {
+        // Convert the loop index to a lane
+        int lane = 63 - i;
+
         // Get the error bit for this lane
         int bit = (errors >> lane) & 1;
 
@@ -195,7 +204,9 @@ window_t find_largest_window(int lane)
 //=================================================================================================
 void execute()
 {
+    window_t best[64];
     const char* filename = "fpga_reg.h";
+    int lane;
 
     // Read our definitions file
     if (!read_register_definitions(reg, filename))
@@ -231,15 +242,39 @@ void execute()
         // Fetch the alignment errors
         strip_chart[cal_word] = fpga.read(reg.LVDS_ALIGN_ERR);
 
-        // Display the chart line
-        if (opt.chart) show_chart_line(cal_word, strip_chart[cal_word]);
+        // Display the strip-char line
+        if (opt.strip) show_chart_line(cal_word, strip_chart[cal_word]);
     }
 
-    for (int lane=0; lane<64; ++lane)
+    // Find the best (i.e., longest) calibration window for each lane
+    for (lane=0; lane<64; lane++) best[lane] = find_largest_window(lane);
+
+    // If the user wants to see a per-lane table, display it
+    if (opt.table)
     {
-        window_t best = find_largest_window(lane);
-        printf("Lane %2d: %3d 0x%03X\n", lane, best.length, best.start);        
+        printf("Lane - Length - Start\n");
+        printf("---------------------\n");
+        for (lane=0; lane<64; ++lane)
+        {
+            window_t& best_win = best[lane];
+            printf("%4d     %3d    0x%03X\n", lane, best_win.length, best_win.start);
+        }
     }
 
+    // Turn off calibration mode so we can write cal_words to individual lanes
+    fpga.write(reg.LVDS_CAL_MODE, 0);
+
+    // Loop through each line and set the calibration word to the 
+    // cal_word in the middle of the longest window
+    for (lane=0; lane<64; ++lane)
+    {
+        window_t& best_win = best[lane];
+        fpga.write(reg.LVDS_LANE_SELECT, lane);
+        fpga.write(reg.LVDS_CAL_WORD, best_win.start + best_win.length / 2);
+    }
+
+    // Clear alignment errors
+    usleep(100);
+    fpga.write(reg.LVDS_CLR_ALIGN_ERR, 1);
 }
 //=================================================================================================
