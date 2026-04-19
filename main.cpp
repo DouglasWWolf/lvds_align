@@ -51,6 +51,18 @@ int main(int argc, const char** argv)
     return 0;
 }
 
+
+//=================================================================================================
+// show_help() - Displays help text and exits
+//=================================================================================================
+void show_help()
+{
+    printf("lvds_align [-table] [-strip]\n")    ;
+}
+//=================================================================================================
+
+
+
 //=================================================================================================
 // parse_command_line() - Parse the command-line options
 //=================================================================================================
@@ -63,7 +75,7 @@ void parse_command_line(const char** argv)
     {
         token = argv[i++];
 
-        if (token == "-strip")
+        if (token == "-strip" || token == "-chart")
         {
             opt.strip = true;
             continue;
@@ -74,14 +86,14 @@ void parse_command_line(const char** argv)
             opt.table = true;
             continue;
         }
+
+        if (token == "-help")
+            show_help();
+
+        fprintf(stderr, "bad command line option %s\n", token.c_str());
+        exit(1);
     }
 
-    // If we made it to the end of the command-line options, all is well
-    if (argv[i] == nullptr) return;
-
-    // If we get here, we discovered an invalid option
-    fprintf(stderr, "bad command line option %s\n", token.c_str());
-    exit(1);
 }
 //=================================================================================================
 
@@ -247,7 +259,21 @@ void execute()
     }
 
     // Find the best (i.e., longest) calibration window for each lane
-    for (lane=0; lane<64; lane++) best[lane] = find_largest_window(lane);
+    for (lane=0; lane<64; lane++)
+    {
+         best[lane] = find_largest_window(lane);
+
+         if (best[lane].length == 0)
+         {
+            fprintf(stderr,"Lane %d could not be calibrated!\n", lane);
+            continue;
+         }
+
+         if (best[lane].length < 10)
+         {
+            fprintf(stderr,"Lane %d has very short window %d !\n", lane, best[lane].length);            
+         }
+    }
 
     // If the user wants to see a per-lane table, display it
     if (opt.table)
