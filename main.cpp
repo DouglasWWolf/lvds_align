@@ -14,13 +14,18 @@ CRegisters fpga;
 // The PCI bus
 PciDevice PCI;
 
-
 // Command line options
 struct opt_t
 {
     bool    chart  = true;
 } opt;
 
+
+// This total number of possible calibration words
+const uint32_t CAL_WORDS = 0x1000;
+
+// One bit per LVDS lane per cal_word
+uint64_t strip_chart[CAL_WORDS];
 
 // This is every register this program cares about
 registers_t reg;
@@ -124,6 +129,65 @@ void show_chart_line(uint32_t cal_word, uint64_t errors)
 }
 //=================================================================================================
 
+// This describes the starting cal_word and length of a calibration window
+struct window_t
+{
+    int start;
+    int length;
+};
+
+//=================================================================================================
+// find_largest_window() - For a given lane, find the longest continuous stretch of usable
+//                         calibration values
+//=================================================================================================
+window_t find_largest_window(int lane)
+{
+    window_t best = {0,0};
+
+    // We're not inside a window yet
+    bool in_window = 0;
+    
+    // The length of the current window
+    window_t current = {0,0};
+
+    // Loop through each possible calibration word
+    for (int cal_word = 0; cal_word < CAL_WORDS; ++cal_word)
+    {
+        // Find the bit that corresponds to the specified lane
+        int bit = (strip_chart[cal_word] >> lane) & 1;
+
+        // If this cal_word was a valid calibration...
+        if (bit == 0)
+        {
+            if (in_window)
+                current.length++;
+            else
+            {
+                in_window      = true;
+                current.start  = cal_word;
+                current.length = 1;                
+            }
+        }
+
+        // Otherwise, if we just fell out of a window...
+        else if (in_window)
+        {
+            in_window = false;
+            if (current.length >= best.length)
+                best = current;
+        }
+
+    }
+
+    // If we were inside a window, check to see if this is the best one
+    if (in_window && current.length >= best.length)
+        best = current;
+
+    // Hand the caller the best window
+    return best;
+}
+//=================================================================================================
+
 
 
 //=================================================================================================
@@ -147,7 +211,7 @@ void execute()
     fpga.write(reg.LVDS_CAL_MODE, 1);
 
     // Loop through every calibration word...
-    for (uint32_t cal_word = 0; cal_word < 0x1000; ++cal_word)
+    for (uint32_t cal_word = 0; cal_word < CAL_WORDS; ++cal_word)
     {
         // Wait for permission to write a new calibration word
         while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
@@ -165,10 +229,16 @@ void execute()
         usleep(250);
 
         // Fetch the alignment errors
-        uint64_t errors = fpga.read(reg.LVDS_ALIGN_ERR);
+        strip_chart[cal_word] = fpga.read(reg.LVDS_ALIGN_ERR);
 
         // Display the chart line
-        show_chart_line(cal_word, errors);
+        if (opt.chart) show_chart_line(cal_word, strip_chart[cal_word]);
+    }
+
+    for (int lane=0; lane<64; ++lane)
+    {
+        window_t best = find_largest_window(lane);
+        printf("Lane %2d: %3d 0x%03X\n", lane, best.length, best.start);        
     }
 
 }
