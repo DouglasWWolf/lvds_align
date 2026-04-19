@@ -97,7 +97,13 @@ static void throwRuntime(const char* fmt, ...)
 //=================================================================================================
 void show_chart_line(uint32_t cal_word, uint64_t errors)
 {
-    
+    if ((cal_word & 0x1FF) == 0)
+    {
+        printf("============\n");
+        printf("Bitslip : %d\n", cal_word >> 9);
+        printf("============\n");
+    }
+
     // Display the calibration word
     printf("0x%03X : ", cal_word);
 
@@ -108,7 +114,7 @@ void show_chart_line(uint32_t cal_word, uint64_t errors)
         int bit = (errors >> lane) & 1;
 
         // Print the error flag for this lane
-        printf("%c", bit ? '.' : 'X');
+        printf("%c", bit ? '.' : '#');
     }
 
     // End of the line
@@ -144,7 +150,7 @@ void execute()
     for (uint32_t cal_word = 0; cal_word < 0x1000; ++cal_word)
     {
         // Wait for permission to write a new calibration word
-        while (fpga.read(reg.LVDS_CAL_WEN) != 70) usleep(1);
+        while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
         
         // Write the calibration word
         fpga.write(reg.LVDS_CAL_WORD, cal_word);
