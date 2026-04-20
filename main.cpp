@@ -328,8 +328,17 @@ void execute()
     }
 
     // Clear alignment errors
-    usleep(100);
+    usleep(250);
     fpga.write(reg.LVDS_CLEAR_ERRORS, 1);
+
+    // Find out what lanes have errors
+    uint64_t errors = fpga.read(reg.LVDS_ALIGN_ERR);
+
+    for (int i=0; i<64; ++i) if ((errors >> i) & 1)
+    {
+        printf("Lane %i calibration failed\n", i);
+        exit_code = 1;            
+    }
 
     // Tell the operating system whether or not we succeeded
     exit(exit_code);
