@@ -20,7 +20,6 @@ struct opt_t
 {
     bool    table   = false;
     bool    strip   = false;
-    bool    verbose = false;
 } opt;
 
 
@@ -59,7 +58,7 @@ int main(int argc, const char** argv)
 //=================================================================================================
 void show_help()
 {
-    printf("lvds_align [-table] [-strip] [-verbose]\n");
+    printf("lvds_align [-table] [-strip]\n");
     exit(1);
 }
 //=================================================================================================
@@ -90,12 +89,6 @@ void parse_command_line(const char** argv)
             continue;
         }
 
-        if (token == "-verbose")
-        {
-            opt.verbose = true;
-            continue;
-        }
-        
         if (token == "-help")
             show_help();
 
@@ -127,9 +120,10 @@ static void throwRuntime(const char* fmt, ...)
 //=================================================================================================
 // show_chart_line() - Show one line from the strip-char
 //=================================================================================================
-void show_chart_line(uint32_t cal_word, uint64_t errors)
+void show_chart_line(uint32_t cal_word, uint64_t errors, uint64_t lane_mask)
 {
     int delay_tap = cal_word & 0x1FF;
+    int bit;
 
     if (delay_tap == 0)
     {
@@ -141,17 +135,20 @@ void show_chart_line(uint32_t cal_word, uint64_t errors)
     // Display the calibration word
     printf("0x%03X : ", cal_word);
 
-    // Loop through each line
+    // Loop through each lane
     for (int i=0; i<64; ++i)
     {
         // Convert the loop index to a lane
         int lane = 63 - i;
 
-        // Get the error bit for this lane
-        int bit = (errors >> lane) & 1;
-
-        // Print the error flag for this lane
-        printf("%c", bit ? '.' : '#');
+        // If this is a lane we care about fetch the error bit 
+        // for this lane, otherwise pretend the lane failed
+        if (lane_mask & (1ULL << lane))
+        {
+            bit = (errors >> lane) & 1;
+            printf("%c", bit ? '.' : '#');
+        }
+        else printf("-");
     }
 
     // End of the line
@@ -184,10 +181,11 @@ window_t find_largest_window(vector<uint64_t>& strip_chart, int lane)
     // Loop through each possible calibration word
     for (int cal_word = 0; cal_word < CAL_WORDS; ++cal_word)
     {
+        // What delay-tap is this cal-word?
         int delay_tap = cal_word & 0x1FF;
 
         // Find the bit that corresponds to the specified lane
-        int bit = (strip_chart[cal_word] >> lane) & 1;
+        int bit = (strip_chart[cal_word] & (1ULL << lane)) != 0;
 
         // If this cal_word was a valid calibration...
         if (bit == 0)
@@ -250,13 +248,10 @@ vector<uint64_t> collect_calibration_data(uint64_t lane_mask)
         usleep(250);
 
         // Find out which lanes aren't aligned at this calibration word
-        uint64_t errors = fpga.read(reg.LVDS_ALIGN_ERR) & lane_mask; 
+        uint64_t errors = fpga.read(reg.LVDS_ALIGN_ERR); 
 
         // Fetch the alignment errors
         result.push_back(errors);
-
-        // If we're displaying a strip chart, show this line
-        if (opt.strip) show_chart_line(cal_word, errors & lane_mask);
     }
 
     // Hand the resuting table of alignment errors to the caller
@@ -275,7 +270,7 @@ void execute()
     window_t best[64];
     const char* filename = "fpga_reg.h";
     int exit_code = 0;
-    uint64_t lane;
+    int lane;
 
     // Read our definitions file
     if (!read_register_definitions(reg, filename))
@@ -299,20 +294,20 @@ void execute()
         // If we're supposed to print a strip-chart, do so
         if (opt.strip) for (uint32_t cal_word = 0; cal_word < CAL_WORDS; ++cal_word)
         {
-            show_chart_line(cal_word, strip_chart[cal_word]);
+            show_chart_line(cal_word, strip_chart[cal_word], lane_mask);
         }
 
         // Find the best (i.e., longest) calibration window for each lane
-        for (lane=0; lane<64; lane++) if (lane_mask & (1 << lane))
+        for (lane=0; lane<64; lane++) if (lane_mask & (1ULL << lane))
         {
-             best[lane] = find_largest_window(strip_chart, lane);
+            best[lane] = find_largest_window(strip_chart, lane);
         }
 
-        // Loop through each line and set the calibration word to the 
+        // Loop through each lane and set the calibration word to the 
         // cal_word in the middle of the longest window
-        for (lane=0; lane<64; ++lane) if (lane_mask & (1 << lane))
+        for (lane=0; lane<64; ++lane) if (lane_mask & (1ULL << lane))
         {
-            fpga.write(reg.LVDS_CAL_MASK, (1 << lane));
+            fpga.write(reg.LVDS_CAL_MASK, (1ULL << lane));
             fpga.write(reg.LVDS_CAL_WORD, best[lane].cal());
         }
 
@@ -320,11 +315,9 @@ void execute()
         usleep(250);
         fpga.write(reg.LVDS_CLEAR_ERRORS, 1);
         usleep(250);
-
-        // Find out which lanes still need calibration
         lane_mask = fpga.read(reg.LVDS_ALIGN_ERR);
 
-        // If all lanes are calibrated, we're done!
+        // If all lanes are aligned, we're done!
         if (lane_mask == 0) break;
     }
 
@@ -335,14 +328,14 @@ void execute()
         printf("---------------------\n");
         for (lane=0; lane<64; ++lane)
         {
-            printf("%4lu     %3d    0x%03X\n", lane, best[lane].length, best[lane].start);
+            printf("%4u     %3d    0x%03X\n", lane, best[lane].length, best[lane].start);
         }
     }
 
     // Show the user lanes that could not be calibrated
-    for (lane=0; lane<64; ++lane) if ((lane_mask >> lane) & 1)
+    for (lane=0; lane<64; ++lane) if (lane_mask & (1ULL << lane))
     {
-        printf("Calibration failed on lane %lu\n", lane);
+        printf("Calibration failed on lane %u\n", lane);
         exit_code = 1;
     }
 
