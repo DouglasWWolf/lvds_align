@@ -5,7 +5,8 @@
 #include "registers.h"
 #include "PciDevice.h"
 #include "register_struct.h"
-
+#include <vector>
+using std::vector;
 using std::string;
 
 // Manages FPGA registers
@@ -162,7 +163,7 @@ struct window_t
 // find_largest_window() - For a given lane, find the longest continuous stretch of usable
 //                         calibration values
 //=================================================================================================
-window_t find_largest_window(int lane)
+window_t find_largest_window(vector<uint64_t>& strip_chart, int lane)
 {
     window_t best = {0,0};
 
@@ -211,6 +212,50 @@ window_t find_largest_window(int lane)
 //=================================================================================================
 
 
+//=================================================================================================
+// collect_calibration_data() - Sweeps through every possible calibration word and returns
+//                              a vector of error bits (1 per LVDS lane) that indicates whether
+//                              an LVDS alignment error was detected on that lane for that
+//                              calibration word.
+//=================================================================================================
+vector<uint64_t> collect_calibration_data()
+{
+    vector<uint64_t> result;
+
+    // Writing a cal_word will write it to all LVDS lanes
+    fpga.write(reg.LVDS_CAL_MODE, 1);
+
+    // Loop through every calibration word...
+    for (uint32_t cal_word = 0; cal_word < 4096; ++cal_word)
+    {
+        // Wait for permission to write a new calibration word
+        while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
+        
+        // Write the calibration word
+        fpga.write(reg.LVDS_CAL_WORD, cal_word);
+        
+        // Wait for the calibration word to take effect
+        usleep(2);
+
+        // Clear alignment errors
+        fpga.write(reg.LVDS_CLEAR_ERRORS, 1);
+
+        // Wait just a moment for alignment errors to occur
+        usleep(250);
+
+        // Fetch the alignment errors
+        result.push_back(fpga.read(reg.LVDS_ALIGN_ERR));
+    }
+
+    // Writing a cal_word will affect only the selected lane
+    fpga.write(reg.LVDS_CAL_MODE, 0);
+
+    // Hand the resuting table of alignment errors to the caller
+    return result;
+}
+//=================================================================================================
+
+
 
 //=================================================================================================
 // execute() - The is the mainline program execution
@@ -232,38 +277,19 @@ void execute()
     // Tell our registers what their base address in userspace is
     fpga.set_base_addr(PCI.resourceList()[0].baseAddr);
 
-    // Writing a cal_word will write it to all LVDS lanes
-    fpga.write(reg.LVDS_CAL_MODE, 1);
+    // Collect calibration data
+    auto strip_chart = collect_calibration_data();
 
-    // Loop through every calibration word...
-    for (uint32_t cal_word = 0; cal_word < CAL_WORDS; ++cal_word)
+    // If we're supposed to print a strip-chart, do so
+    if (opt.strip) for (uint32_t cal_word = 0; cal_word < CAL_WORDS; ++cal_word)
     {
-        // Wait for permission to write a new calibration word
-        while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
-        
-        // Write the calibration word
-        fpga.write(reg.LVDS_CAL_WORD, cal_word);
-        
-        // Wait for the calibration word to take effect
-        usleep(2);
-
-        // Clear alignment errors
-        fpga.write(reg.LVDS_CLEAR_ERRORS, 1);
-
-        // Wait just a moment for alignment errors to occur
-        usleep(250);
-
-        // Fetch the alignment errors
-        strip_chart[cal_word] = fpga.read(reg.LVDS_ALIGN_ERR);
-
-        // Display the strip-char line
-        if (opt.strip) show_chart_line(cal_word, strip_chart[cal_word]);
+        show_chart_line(cal_word, strip_chart[cal_word]);
     }
 
     // Find the best (i.e., longest) calibration window for each lane
     for (lane=0; lane<64; lane++)
     {
-         best[lane] = find_largest_window(lane);
+         best[lane] = find_largest_window(strip_chart, lane);
 
          if (best[lane].length == 0)
          {
@@ -291,8 +317,6 @@ void execute()
         }
     }
 
-    // Turn off calibration mode so we can write cal_words to individual lanes
-    fpga.write(reg.LVDS_CAL_MODE, 0);
 
     // Loop through each line and set the calibration word to the 
     // cal_word in the middle of the longest window
