@@ -20,6 +20,8 @@ struct opt_t
 {
     bool    table   = false;
     bool    strip   = false;
+    bool    recal   = false;
+    bool    verbose = false;
 } opt;
 
 
@@ -86,6 +88,18 @@ void parse_command_line(const char** argv)
         if (token == "-table")
         {
             opt.table = true;
+            continue;
+        }
+
+        if (token == "-recal")
+        {
+            opt.recal = true;
+            continue;
+        }
+
+        if (token == "-verbose")
+        {
+            opt.verbose = true;
             continue;
         }
 
@@ -259,7 +273,18 @@ vector<uint64_t> collect_calibration_data(uint64_t lane_mask)
 }
 //=================================================================================================
 
-
+void show_errors(uint64_t bitmap)
+{
+    for (int i=0; i<64; ++i)
+    {
+        int lane=63-i;
+        if (bitmap & (1ULL << lane))
+            printf("X");
+        else
+            printf(".");
+    }
+    printf("\n");
+}
 
 
 //=================================================================================================
@@ -271,6 +296,7 @@ void execute()
     const char* filename = "fpga_reg.h";
     int exit_code = 0;
     int lane;
+    uint64_t lane_mask;
 
     // Read our definitions file
     if (!read_register_definitions(reg, filename))
@@ -283,10 +309,15 @@ void execute()
     fpga.set_base_addr(PCI.resourceList()[0].baseAddr);
 
     // We're going to calibrate all lanes on the first pass
-    uint64_t lane_mask = 0xFFFFFFFFFFFFFFFF;
+    if (opt.recal)
+    {
+        lane_mask = fpga.read(reg.LVDS_ALIGN_ERR);
+        if (lane_mask == 0) exit(0);
+    }
+    else lane_mask = 0xFFFFFFFFFFFFFFFF;
 
     // We're going to make several calibration passes
-    for (int attempt=0; attempt < 3; ++attempt)
+    for (int attempt=0; attempt < 10; ++attempt)
     {
         // Collect calibration data
         auto strip_chart = collect_calibration_data(lane_mask);
@@ -319,6 +350,22 @@ void execute()
 
         // If all lanes are aligned, we're done!
         if (lane_mask == 0) break;
+
+        // Show the user lanes that could not be calibrated
+        if (opt.verbose)
+        {
+            if (attempt == 0)
+            {
+                printf("               6         5         4         3         2         1         0\n");
+                printf("            3210987654321098765432109876543210987654321098765432109876543210\n");
+                printf("            ----------------------------------------------------------------\n");
+            }
+            printf("Attempt %2i :", attempt+1);
+            show_errors(lane_mask);
+        }
+
+        // Wait a moment between calibration passes
+        usleep(999999);
     }
 
     // If the user wants to see a per-lane table, display it
