@@ -273,6 +273,9 @@ vector<uint64_t> collect_calibration_data(uint64_t lane_mask)
 }
 //=================================================================================================
 
+//=================================================================================================
+// show_errors() - Display a 64-bit bitmap as a series of "X" and "." characters
+//=================================================================================================
 void show_errors(uint64_t bitmap)
 {
     for (int i=0; i<64; ++i)
@@ -285,6 +288,7 @@ void show_errors(uint64_t bitmap)
     }
     printf("\n");
 }
+//=================================================================================================
 
 
 //=================================================================================================
@@ -328,18 +332,18 @@ void execute()
             show_chart_line(cal_word, strip_chart[cal_word], lane_mask);
         }
 
-        // Find the best (i.e., longest) calibration window for each lane
-        for (lane=0; lane<64; lane++) if (lane_mask & (1ULL << lane))
-        {
-            best[lane] = find_largest_window(strip_chart, lane);
-        }
-
         // Loop through each lane and set the calibration word to the 
         // cal_word in the middle of the longest window
         for (lane=0; lane<64; ++lane) if (lane_mask & (1ULL << lane))
         {
-            fpga.write(reg.LVDS_CAL_MASK, (1ULL << lane));
+            // Find the best (i.e., longest) calibration window for each lane
+            best[lane] = find_largest_window(strip_chart, lane);
+
+            // Write the calibration word for this lane
+            while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
+            fpga.write(reg.LVDS_CAL_MASK, 1ULL << lane);
             fpga.write(reg.LVDS_CAL_WORD, best[lane].cal());
+            while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
         }
 
         // Clear alignment errors and find out what lanes still have errors
@@ -363,9 +367,6 @@ void execute()
             printf("Attempt %2i :", attempt+1);
             show_errors(lane_mask);
         }
-
-        // Wait a moment between calibration passes
-        usleep(999999);
     }
 
     // If the user wants to see a per-lane table, display it
