@@ -18,10 +18,11 @@ PciDevice PCI;
 // Command line options
 struct opt_t
 {
-    bool    table   = false;
-    bool    strip   = false;
-    bool    recal   = false;
-    bool    verbose = false;
+    bool    table     = false;
+    bool    strip     = false;
+    bool    recal     = false;
+    bool    verbose   = false;
+    int     max_tries = 10;
 } opt;
 
 
@@ -60,7 +61,7 @@ int main(int argc, const char** argv)
 //=================================================================================================
 void show_help()
 {
-    printf("lvds_align [-table] [-strip]\n");
+    printf("lvds_align [-table] [-strip] [-verbose] [-tries <n>]\n");
     exit(1);
 }
 //=================================================================================================
@@ -100,6 +101,12 @@ void parse_command_line(const char** argv)
         if (token == "-verbose")
         {
             opt.verbose = true;
+            continue;
+        }
+
+        if (token == "-tries" && argv[i])
+        {
+            opt.max_tries = atoi(argv[i++]);
             continue;
         }
 
@@ -321,7 +328,7 @@ void execute()
     else lane_mask = 0xFFFFFFFFFFFFFFFF;
 
     // We're going to make several calibration passes
-    for (int attempt=0; attempt < 10; ++attempt)
+    for (int attempt=0; attempt < opt.max_tries; ++attempt)
     {
         // Collect calibration data
         auto strip_chart = collect_calibration_data(lane_mask);
