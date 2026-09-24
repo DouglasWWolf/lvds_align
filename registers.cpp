@@ -3,6 +3,21 @@
 #include <cstdarg>
 #include <stdexcept>
 
+
+//=============================================================================
+// On x86, the register address is an offset from a PCI resource in RAM
+//
+// On ARM, the register address is an offset from the block of registers
+// that we mapped with "memmap()"
+//=============================================================================
+#ifdef __aarch64__
+    static const uint32_t addr_mask = 0x00000FFF;
+#else
+    static const uint32_t addr_mask = 0xFFFFFFFF;
+#endif
+//=============================================================================
+
+
 //=================================================================================================
 // throw_runtime() - Throws a runtime exception
 //=================================================================================================
@@ -29,7 +44,7 @@ void CRegisters::write(uint64_t reg, uint64_t value)
     if (reg == 0xFFFFFFFF) throw_runtime("undefined register");
 
     // Break the register definition into an offset and a descriptor
-    uint32_t reg_offset = reg & 0xFFFFFFFF;
+    uint32_t reg_offset = reg & addr_mask;
     uint32_t descriptor = reg >> 32;
 
     // Store an ordinary 32-bit value
@@ -62,7 +77,7 @@ uint64_t CRegisters::read(uint64_t reg)
     if (reg == 0xFFFFFFFF) throw_runtime("undefined register");
 
     // Break the register definition into an offset and a descriptor
-    uint32_t reg_offset = reg & 0xFFFFFFFF;
+    uint32_t reg_offset = reg & addr_mask;
     uint32_t descriptor = reg >> 32;
 
     // Read an ordinary 32-bit value

@@ -23,6 +23,7 @@ struct opt_t
     bool    recal     = false;
     bool    verbose   = false;
     int     max_tries = 10;
+    int     lanes     = 64;
 } opt;
 
 
@@ -38,6 +39,14 @@ registers_t reg;
 // Function prototypes
 void execute();
 void parse_command_line(const char** argv);
+
+uint64_t get_lane_mask()
+{
+    if (opt.lanes == 64)
+        return 0xFFFFFFFFFFFFFFFF;
+    else
+        return (1 << opt.lanes) - 1;
+}
 
 int main(int argc, const char** argv)
 {
@@ -61,7 +70,7 @@ int main(int argc, const char** argv)
 //=================================================================================================
 void show_help()
 {
-    printf("lvds_align [-table] [-strip] [-verbose] [-tries <n>]\n");
+    printf("lvds_align [-table] [-strip] [-verbose] [-tries <n>] [-lanes <n>]\n");
     exit(1);
 }
 //=================================================================================================
@@ -110,6 +119,14 @@ void parse_command_line(const char** argv)
             continue;
         }
 
+        if (token == "-lanes" && argv[i])
+        {
+            opt.lanes = atoi(argv[i++]);
+            continue;
+        }
+
+        
+
         if (token == "-help")
             show_help();
 
@@ -157,10 +174,10 @@ void show_chart_line(uint32_t cal_word, uint64_t errors, uint64_t lane_mask)
     printf("0x%03X : ", cal_word);
 
     // Loop through each lane
-    for (int i=0; i<64; ++i)
+    for (int i=0; i<opt.lanes; ++i)
     {
-        // Convert the loop index to a lane
-        int lane = 63 - i;
+        // Convert the loop index to a lane number
+        int lane = (opt.lanes - 1) - i;
 
         // If this is a lane we care about fetch the error bit 
         // for this lane, otherwise pretend the lane failed
@@ -257,9 +274,10 @@ vector<uint64_t> collect_calibration_data(uint64_t lane_mask)
     // Loop through every calibration word...
     for (uint32_t cal_word = 0; cal_word < 4096; ++cal_word)
     {
+
         // Wait for permission to write a new calibration word
         while (fpga.read(reg.LVDS_CAL_WEN) != 7) usleep(1);
-        
+
         // Write the calibration word, and wait for it to take effect
         fpga.write(reg.LVDS_CAL_WORD, cal_word);
         usleep(20);
@@ -285,9 +303,9 @@ vector<uint64_t> collect_calibration_data(uint64_t lane_mask)
 //=================================================================================================
 void show_errors(uint64_t bitmap)
 {
-    for (int i=0; i<64; ++i)
+    for (int i=0; i<opt.lanes; ++i)
     {
-        int lane=63-i;
+        int lane=(opt.lanes-1)-i;
         if (bitmap & (1ULL << lane))
             printf("X");
         else
@@ -309,14 +327,21 @@ void execute()
     int lane;
     uint64_t lane_mask;
 
+
     // Read our definitions file
     if (!read_register_definitions(reg, filename))
         throwRuntime("file not found: %s", filename);
 
-    // Open a connection to our PCI device
-    PCI.open("10ee:903f");
+    // Open a connection to our PCI device.  On ARM, we are connecting
+    // directly to a 4KB block of AXI addresses
+    #ifdef __aarch64__
+        uint64_t slave_addr = reg.LVDS_CAL_WEN & ~(0xFFF);
+        PCI.openDirect(slave_addr, 0x1000);
+    #else
+        PCI.open("10ee:903f");
+    #endif
 
-    // Tell our registers what their base address in userspace is
+    // The the register list what the userspace address of the registers is
     fpga.set_base_addr(PCI.resourceList()[0].baseAddr);
 
     // We're going to calibrate all lanes on the first pass
@@ -325,11 +350,12 @@ void execute()
         lane_mask = fpga.read(reg.LVDS_ALIGN_ERR);
         if (lane_mask == 0) exit(0);
     }
-    else lane_mask = 0xFFFFFFFFFFFFFFFF;
+    else lane_mask = get_lane_mask();
 
     // We're going to make several calibration passes
     for (int attempt=0; attempt < opt.max_tries; ++attempt)
     {
+
         // Collect calibration data
         auto strip_chart = collect_calibration_data(lane_mask);
 
@@ -341,7 +367,7 @@ void execute()
 
         // Loop through each lane and set the calibration word to the 
         // cal_word in the middle of the longest window
-        for (lane=0; lane<64; ++lane) if (lane_mask & (1ULL << lane))
+        for (lane=0; lane<opt.lanes; ++lane) if (lane_mask & (1ULL << lane))
         {
             // Find the best (i.e., longest) calibration window for each lane
             best[lane] = find_largest_window(strip_chart, lane);
@@ -381,14 +407,14 @@ void execute()
     {
         printf("Lane - Length - Start\n");
         printf("---------------------\n");
-        for (lane=0; lane<64; ++lane)
+        for (lane=0; lane<opt.lanes; ++lane)
         {
             printf("%4u     %3d    0x%03X\n", lane, best[lane].length, best[lane].start);
         }
     }
 
     // Show the user lanes that could not be calibrated
-    for (lane=0; lane<64; ++lane) if (lane_mask & (1ULL << lane))
+    for (lane=0; lane<opt.lanes; ++lane) if (lane_mask & (1ULL << lane))
     {
         printf("Calibration failed on lane %u\n", lane);
         exit_code = 1;
